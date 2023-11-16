@@ -84,7 +84,7 @@ func actionDefine(dic *dictionary.Dictionary, reader *bufio.Reader) {
 		return
 	}
 
-	fmt.Printf("Definition of '%s': %s\n", entry)
+	fmt.Printf("Definition of '%s': %s\n", entry.Word, entry.Definition)
 }
 
 func actionRemove(dic *dictionary.Dictionary, reader *bufio.Reader) {
