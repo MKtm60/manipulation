@@ -74,17 +74,15 @@ func actionAdd(dic *dictionary.Dictionary, reader *bufio.Reader) {
 }
 
 func actionDefine(dic *dictionary.Dictionary, reader *bufio.Reader) {
-	fmt.Print("Enter the word: ")
+	fmt.Print("Entrez le mot : ")
 	word, _ := reader.ReadString('\n')
 	word = strings.TrimSpace(word)
-
-	entry, err := dic.Get(word)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	fmt.Printf("Definition of '%s': %s\n", entry.Word, entry.Definition)
+	fmt.Print("Entrez la nouvelle définition : ")
+	newDefinition, _ := reader.ReadString('\n')
+	newDefinition = strings.TrimSpace(newDefinition)
+	dic.Remove(word)
+	dic.Add(word, newDefinition)
+	fmt.Printf("La définition pour le mot '%s' a été mise à jour.\n", word)
 }
 
 func actionRemove(dic *dictionary.Dictionary, reader *bufio.Reader) {
