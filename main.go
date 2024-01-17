@@ -13,7 +13,6 @@ import (
 
 const dictionaryFilePath = "dictionary.json"
 
-
 type SaveData struct {
 	Entries map[string]struct {
 		Definition string `json:"definition"`
@@ -127,7 +126,6 @@ func actionRemove(d *dictionary.Dictionary, reader *bufio.Reader) {
 	fmt.Printf("Word '%s' removed.\n", entry.Word)
 }
 
-
 func saveDictionary(d *dictionary.Dictionary) {
 	saveData := SaveData{
 		Entries: make(map[string]struct {
@@ -163,7 +161,6 @@ func loadDictionary() *dictionary.Dictionary {
 		return d
 	}
 
-	
 	if len(data) == 0 {
 		return d
 	}
