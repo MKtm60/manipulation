@@ -1,17 +1,17 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
-	"strconv"
-	"strings"
 
 	"manipulation/dictionary"
+
+	"github.com/gorilla/mux"
 )
 
-const dictionaryFilePath = "dictionary.json"
+const dictionaryFile = "dictionary.json"
 
 type SaveData struct {
 	Entries map[string]struct {
@@ -20,110 +20,106 @@ type SaveData struct {
 }
 
 func main() {
+	router := mux.NewRouter()
+
 	d := loadDictionary()
 
-	reader := bufio.NewReader(os.Stdin)
+	router.HandleFunc("/add", func(w http.ResponseWriter, router *http.Request) {
+		actionAdd(d, w, router)
+	}).Methods("POST")
 
-	for {
-		fmt.Println("Choose an action:")
-		fmt.Println("1. Add")
-		fmt.Println("2. Define")
-		fmt.Println("3. Remove")
-		fmt.Println("4. List")
-		fmt.Println("5. Exit")
+	router.HandleFunc("/define/{word}", func(w http.ResponseWriter, router *http.Request) {
+		actionDefine(d, w, router)
+	}).Methods("PUT")
 
-		choice, err := getUserChoice(reader)
-		if err != nil {
-			fmt.Println("Choice Error:", err)
-			continue
-		}
+	router.HandleFunc("/list", func(w http.ResponseWriter, router *http.Request) {
+		actionList(d, w)
+	}).Methods("GET")
 
-		switch choice {
-		case 1:
-			actionAdd(d, reader)
-		case 2:
-			actionDefine(d, reader)
-		case 3:
-			actionRemove(d, reader)
-		case 4:
-			actionList(d)
-		case 5:
-			saveDictionary(d)
-			fmt.Println("Exit program.")
-			return
-		default:
-			fmt.Println("Invalid choice. Please choose an option valid.")
-		}
-	}
+	router.HandleFunc("/remove/{word}", func(w http.ResponseWriter, router *http.Request) {
+		actionRemove(d, w, router)
+	}).Methods("DELETE")
+
+	router.HandleFunc("/exit", func(w http.ResponseWriter, router *http.Request) {
+		saveDictionary(d)
+		fmt.Fprintln(w, "Exit program.")
+	}).Methods("GET")
+
+	http.Handle("/", router)
+
+	fmt.Println("Server started on :8090")
+	http.ListenAndServe(":8090", router)
 }
 
-func getUserChoice(reader *bufio.Reader) (int, error) {
-	fmt.Print("Enter your choice: ")
-	text, err := reader.ReadString('\n')
-	if err != nil {
-		return 0, err
+// Rest of the code remains unchanged...
+
+func actionAdd(d *dictionary.Dictionary, w http.ResponseWriter, router *http.Request) {
+	decoder := json.NewDecoder(router.Body)
+	var requestData struct {
+		Word       string `json:"word"`
+		Definition string `json:"definition"`
 	}
-	text = strings.TrimSpace(text)
-	choice, err := strconv.Atoi(text)
+
+	err := decoder.Decode(&requestData)
 	if err != nil {
-		return 0, err
-	}
-	return choice, nil
-}
-
-func actionAdd(d *dictionary.Dictionary, reader *bufio.Reader) {
-	fmt.Print("Enter the word: ")
-	word, _ := reader.ReadString('\n')
-	word = strings.TrimSpace(word)
-
-	fmt.Print("Enter the definition: ")
-	definition, _ := reader.ReadString('\n')
-	definition = strings.TrimSpace(definition)
-
-	d.Add(word, definition)
-	fmt.Printf("Word '%s' added with definition '%s'.\n", word, definition)
-}
-
-func actionDefine(d *dictionary.Dictionary, reader *bufio.Reader) {
-	fmt.Print("Enter the word : ")
-	word, _ := reader.ReadString('\n')
-	word = strings.TrimSpace(word)
-
-	entry, err := d.Get(word)
-	if err != nil {
-		fmt.Println(err)
+		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
 		return
 	}
 
-	fmt.Print("Enter the new definition : ")
-	newDefinition, _ := reader.ReadString('\n')
-	newDefinition = strings.TrimSpace(newDefinition)
-	d.Remove(word)
-	d.Add(word, newDefinition)
-	fmt.Printf("Definition of '%s' : '%s\n'", entry.Word, entry.Definition)
+	d.Add(requestData.Word, requestData.Definition)
+	response := fmt.Sprintf("Word '%s' added with definition '%s'.\n", requestData.Word, requestData.Definition)
+	fmt.Fprintln(w, response)
 }
 
-func actionList(d *dictionary.Dictionary) {
+func actionDefine(d *dictionary.Dictionary, w http.ResponseWriter, router *http.Request) {
+	vars := mux.Vars(router)
+	word := vars["word"]
+
+	decoder := json.NewDecoder(router.Body)
+	var requestData struct {
+		Definition string `json:"definition"`
+	}
+
+	err := decoder.Decode(&requestData)
+	if err != nil {
+		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	entry, err := d.Get(word)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	d.Remove(word)
+	d.Add(word, requestData.Definition)
+	response := fmt.Sprintf("Definition of '%s': '%s'\n", entry.Word, entry.Definition)
+	fmt.Fprintln(w, response)
+}
+
+func actionList(d *dictionary.Dictionary, w http.ResponseWriter) {
 	words, entries := d.List()
-	fmt.Println("Words in the dictionary:")
+	response := "Words in the dictionary:\n"
 	for _, word := range words {
-		fmt.Printf("%s: %s\n", word, entries[word])
+		response += fmt.Sprintf("%s: %s\n", word, entries[word])
 	}
+	fmt.Fprintln(w, response)
 }
 
-func actionRemove(d *dictionary.Dictionary, reader *bufio.Reader) {
-	fmt.Print("Enter the word to remove: ")
-	word, _ := reader.ReadString('\n')
-	word = strings.TrimSpace(word)
+func actionRemove(d *dictionary.Dictionary, w http.ResponseWriter, router *http.Request) {
+	vars := mux.Vars(router)
+	word := vars["word"]
 
 	entry, err := d.Get(word)
 	if err != nil {
-		fmt.Println(err)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
 	d.Remove(word)
-	fmt.Printf("Word '%s' removed.\n", entry.Word)
+	response := fmt.Sprintf("Word '%s' removed.\n", entry.Word)
+	fmt.Fprintln(w, response)
 }
 
 func saveDictionary(d *dictionary.Dictionary) {
@@ -146,7 +142,7 @@ func saveDictionary(d *dictionary.Dictionary) {
 		return
 	}
 
-	err = os.WriteFile(dictionaryFilePath, data, 0644)
+	err = os.WriteFile(dictionaryFile, data, 0644)
 	if err != nil {
 		fmt.Println("Error saving dictionary to file:", err)
 	}
@@ -155,7 +151,7 @@ func saveDictionary(d *dictionary.Dictionary) {
 func loadDictionary() *dictionary.Dictionary {
 	d := dictionary.New()
 
-	data, err := os.ReadFile(dictionaryFilePath)
+	data, err := os.ReadFile(dictionaryFile)
 	if err != nil {
 		fmt.Println("Error reading dictionary file:", err)
 		return d
