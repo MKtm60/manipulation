@@ -21,13 +21,16 @@ type SaveData struct {
 }
 
 func main() {
-	// Initialize the log file
+
 	middleware.InitLogFile()
 
 	router := mux.NewRouter()
 
-	// Add the logging to file middleware
+	router.Use(middleware.AuthenticationMiddleware)
+
 	router.Use(middleware.LoggingToFileMiddleware)
+
+	router.Use(middleware.ValidateDataMiddleware)
 
 	d := loadDictionary()
 
@@ -57,6 +60,8 @@ func main() {
 	fmt.Println("Server started on :8090")
 	http.ListenAndServe(":8090", router)
 }
+
+// Rest of the code remains unchanged...
 
 func actionAdd(d *dictionary.Dictionary, w http.ResponseWriter, router *http.Request) {
 	decoder := json.NewDecoder(router.Body)

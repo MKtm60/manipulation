@@ -75,6 +75,17 @@ func (d *Dictionary) List() ([]string, map[string]Entry) {
 	return wordList, d.entries
 }
 
-func (d *Dictionary) Remove(word string) {
+func (d *Dictionary) Remove(word string) error {
+	// Signal de suppression via le canal
 	d.updateChannel <- dictionaryUpdate{entry: Entry{Word: word}, del: true}
+
+	_, found := d.entries[word]
+	if !found {
+		return fmt.Errorf("Word not found: %s", word)
+	}
+
+	// Effectuer la suppression dans le dictionnaire
+
+	delete(d.entries, word)
+	return nil
 }
