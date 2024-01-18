@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"manipulation/dictionary"
+	"manipulation/middleware"
 
 	"github.com/gorilla/mux"
 )
@@ -20,7 +21,13 @@ type SaveData struct {
 }
 
 func main() {
+	// Initialize the log file
+	middleware.InitLogFile()
+
 	router := mux.NewRouter()
+
+	// Add the logging to file middleware
+	router.Use(middleware.LoggingToFileMiddleware)
 
 	d := loadDictionary()
 
@@ -50,8 +57,6 @@ func main() {
 	fmt.Println("Server started on :8090")
 	http.ListenAndServe(":8090", router)
 }
-
-// Rest of the code remains unchanged...
 
 func actionAdd(d *dictionary.Dictionary, w http.ResponseWriter, router *http.Request) {
 	decoder := json.NewDecoder(router.Body)
