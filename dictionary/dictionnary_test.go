@@ -1,90 +1,108 @@
 package dictionary
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestAddEntry(t *testing.T) {
+func TestRedisDictionary_Add(t *testing.T) {
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	rd := NewRedisDictionary("localhost:6379", rdb)
 
-	d := New()
 	word := "test_word"
 	definition := "test_definition"
-	d.Add(word, definition)
 
-	entry, err := d.Get(word)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
+	rd.Add(word, definition)
 
-	if entry.Definition != "test_definition" {
-		t.Errorf("Expected definition 'test_definition', got %s", entry.Definition)
-	}
+	entry, err := rd.Get(word)
+	assert.NoError(t, err)
+	assert.Equal(t, word, entry.Word)
+	assert.Equal(t, definition, entry.Definition)
 }
 
-func TestGetEntry(t *testing.T) {
-	d := New()
+func TestRedisDictionary_Get(t *testing.T) {
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	rd := NewRedisDictionary("localhost:6379", rdb)
+
 	word := "test_word"
 	definition := "test_definition"
-	d.Add(word, definition)
 
-	entry, err := d.Get("test_word")
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
+	rd.Add(word, definition)
 
-	if entry.Definition != "test_definition" {
-		t.Errorf("Expected definition 'test_definition', got %s", entry.Definition)
-	}
+	entry, err := rd.Get(word)
+	assert.NoError(t, err)
+	assert.Equal(t, word, entry.Word)
+	assert.Equal(t, definition, entry.Definition)
+
+	// Test avec un mot qui n'existe pas
+	nonexistentWord := "nonexistent_word"
+	_, err = rd.Get(nonexistentWord)
+	assert.Error(t, err)
+	assert.EqualError(t, err, "word 'nonexistent_word' not found")
 }
 
-func TestRemoveEntry(t *testing.T) {
-	d := New()
+func TestRedisDictionary_List(t *testing.T) {
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	rd := NewRedisDictionary("localhost:6379", rdb)
+
+	word1 := "test_word1"
+	definition1 := "test_definition1"
+
+	word2 := "test_word2"
+	definition2 := "test_definition2"
+
+	rd.Add(word1, definition1)
+	rd.Add(word2, definition2)
+
+	wordList, entryMap := rd.List()
+
+	assert.Contains(t, wordList, word1)
+	assert.Contains(t, wordList, word2)
+
+	entry1, exists1 := entryMap[word1]
+	entry2, exists2 := entryMap[word2]
+
+	assert.True(t, exists1)
+	assert.True(t, exists2)
+
+	assert.Equal(t, definition1, entry1.Definition)
+	assert.Equal(t, definition2, entry2.Definition)
+}
+
+func TestRedisDictionary_Remove(t *testing.T) {
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	rd := NewRedisDictionary("localhost:6379", rdb)
+
 	word := "test_word"
 	definition := "test_definition"
-	d.Add(word, definition)
 
-	// Supprimer l'entrée
-	err := d.Remove(word)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
-	// Vérifier que l'entrée existe avant la suppression
-	_, err = d.Get(word)
-	if err == nil {
-		t.Errorf("Expected error, entry should be removed")
-	}
-}
+	rd.Add(word, definition)
 
-func TestListEntries(t *testing.T) {
-	d := New()
-	word1 := "apple"
-	word2 := "banana"
-	word3 := "cherry"
-	definition1 := "a fruit"
-	definition2 := "another fruit"
-	definition3 := "yet another fruit"
+	// Vérifier que le mot existe avant la suppression
+	_, err := rd.Get(word)
+	assert.NoError(t, err)
 
-	d.Add(word1, definition1)
-	d.Add(word2, definition2)
-	d.Add(word3, definition3)
+	err = rd.Remove(word)
+	assert.NoError(t, err)
 
-	expectedWordList := []string{word1, word2, word3}
-	expectedEntries := map[string]Entry{
-		word1: {Word: word1, Definition: definition1},
-		word2: {Word: word2, Definition: definition2},
-		word3: {Word: word3, Definition: definition3},
-	}
+	// Vérifier que le mot a été supprimé
+	_, err = rd.Get(word)
+	assert.Error(t, err)
+	assert.EqualError(t, err, "word 'test_word' not found")
 
-	wordList, entries := d.List()
-
-	// Vérifier que la liste des mots est correcte
-	if !reflect.DeepEqual(wordList, expectedWordList) {
-		t.Errorf("Expected word list %v; got %v", expectedWordList, wordList)
-	}
-
-	// Vérifier que la liste des entrées est correcte
-	if !reflect.DeepEqual(entries, expectedEntries) {
-		t.Errorf("Expected entries %v; got %v", expectedEntries, entries)
-	}
+	// Test avec un mot qui n'existe pas
+	nonexistentWord := "nonexistent_word"
+	err = rd.Remove(nonexistentWord)
+	assert.Error(t, err)
+	assert.EqualError(t, err, "Word not found: nonexistent_word")
 }

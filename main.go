@@ -9,10 +9,14 @@ import (
 	"manipulation/dictionary"
 	"manipulation/middleware"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 )
 
-const dictionaryFile = "dictionary.json"
+const (
+	dictionaryFile = "dictionary.json"
+	redisAddr      = "localhost:6379" // Adresse de votre serveur Redis
+)
 
 type SaveData struct {
 	Entries map[string]struct {
@@ -21,36 +25,43 @@ type SaveData struct {
 }
 
 func main() {
-
 	middleware.InitLogFile()
+
+	// Initialisation du client Redis
+	rdb := redis.NewClient(&redis.Options{
+		Addr: redisAddr,
+		DB:   0,
+	})
+	defer rdb.Close()
 
 	router := mux.NewRouter()
 
+	// Utilisation des middlewares
 	router.Use(middleware.AuthenticationMiddleware)
-
 	router.Use(middleware.LoggingToFileMiddleware)
-
 	router.Use(middleware.ValidateDataMiddleware)
 
-	d := loadDictionary()
+	// Création de l'instance du dictionnaire avec Redis
+	d := dictionary.NewRedisDictionary(redisAddr, rdb)
 
-	router.HandleFunc("/add", func(w http.ResponseWriter, router *http.Request) {
-		actionAdd(d, w, router)
+	// Définition des routes
+	router.HandleFunc("/add", func(w http.ResponseWriter, r *http.Request) {
+		actionAdd(d, w, r)
 	}).Methods("POST")
 
-	router.HandleFunc("/define/{word}", func(w http.ResponseWriter, router *http.Request) {
-		actionDefine(d, w, router)
+	router.HandleFunc("/define/{word}", func(w http.ResponseWriter, r *http.Request) {
+		actionDefine(d, w, r)
 	}).Methods("PUT")
 
-	router.HandleFunc("/list", func(w http.ResponseWriter, router *http.Request) {
+	router.HandleFunc("/list", func(w http.ResponseWriter, r *http.Request) {
 		actionList(d, w)
 	}).Methods("GET")
 
-	router.HandleFunc("/remove/{word}", func(w http.ResponseWriter, router *http.Request) {
-		actionRemove(d, w, router)
+	router.HandleFunc("/remove/{word}", func(w http.ResponseWriter, r *http.Request) {
+		actionRemove(d, w, r)
 	}).Methods("DELETE")
 
-	router.HandleFunc("/exit", func(w http.ResponseWriter, router *http.Request) {
+	router.HandleFunc("/exit", func(w http.ResponseWriter, r *http.Request) {
 		saveDictionary(d)
 		fmt.Fprintln(w, "Exit program.")
 	}).Methods("GET")
@@ -61,10 +72,11 @@ func main() {
 	http.ListenAndServe(":8090", router)
 }
 
-// Rest of the code remains unchanged...
+// Reste du code inchangé...
 
-func actionAdd(d *dictionary.Dictionary, w http.ResponseWriter, router *http.Request) {
-	decoder := json.NewDecoder(router.Body)
+// Adaptation des fonctions pour utiliser RedisDictionary
+func actionAdd(d *dictionary.RedisDictionary, w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
 	var requestData struct {
 		Word       string `json:"word"`
 		Definition string `json:"definition"`
@@ -81,11 +93,11 @@ func actionAdd(d *dictionary.Dictionary, w http.ResponseWriter, router *http.Req
 	fmt.Fprintln(w, response)
 }
 
-func actionDefine(d *dictionary.Dictionary, w http.ResponseWriter, router *http.Request) {
-	vars := mux.Vars(router)
+func actionDefine(d *dictionary.RedisDictionary, w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
 	word := vars["word"]
 
-	decoder := json.NewDecoder(router.Body)
+	decoder := json.NewDecoder(r.Body)
 	var requestData struct {
 		Definition string `json:"definition"`
 	}
@@ -108,7 +120,7 @@ func actionDefine(d *dictionary.Dictionary, w http.ResponseWriter, router *http.
 	fmt.Fprintln(w, response)
 }
 
-func actionList(d *dictionary.Dictionary, w http.ResponseWriter) {
+func actionList(d *dictionary.RedisDictionary, w http.ResponseWriter) {
 	words, entries := d.List()
 	response := "Words in the dictionary:\n"
 	for _, word := range words {
@@ -117,8 +129,8 @@ func actionList(d *dictionary.Dictionary, w http.ResponseWriter) {
 	fmt.Fprintln(w, response)
 }
 
-func actionRemove(d *dictionary.Dictionary, w http.ResponseWriter, router *http.Request) {
-	vars := mux.Vars(router)
+func actionRemove(d *dictionary.RedisDictionary, w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
 	word := vars["word"]
 
 	entry, err := d.Get(word)
@@ -132,7 +144,7 @@ func actionRemove(d *dictionary.Dictionary, w http.ResponseWriter, router *http.
 	fmt.Fprintln(w, response)
 }
 
-func saveDictionary(d *dictionary.Dictionary) {
+func saveDictionary(d *dictionary.RedisDictionary) {
 	saveData := SaveData{
 		Entries: make(map[string]struct {
 			Definition string `json:"definition"`
@@ -156,31 +168,4 @@ func saveDictionary(d *dictionary.Dictionary) {
 	if err != nil {
 		fmt.Println("Error saving dictionary to file:", err)
 	}
-}
-
-func loadDictionary() *dictionary.Dictionary {
-	d := dictionary.New()
-
-	data, err := os.ReadFile(dictionaryFile)
-	if err != nil {
-		fmt.Println("Error reading dictionary file:", err)
-		return d
-	}
-
-	if len(data) == 0 {
-		return d
-	}
-
-	var saveData SaveData
-	err = json.Unmarshal(data, &saveData)
-	if err != nil {
-		fmt.Println("Error decoding dictionary:", err)
-		return d
-	}
-
-	for word, entry := range saveData.Entries {
-		d.Add(word, entry.Definition)
-	}
-
-	return d
 }
